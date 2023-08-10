@@ -19,20 +19,11 @@
 #include "cvector.h" 
 #include "cmap.h"  
 
-// The constant MAX_RESULTS must be used to control size of leaderboard
-// e.g. change value of MAX_RESULTS to 3 on second line, recompile, 
-// and program should then show only the top 3 results.  Experiment with
-// different values while testing to be sure the constant is
-// properly respected. (Your code can assume the value will always
-// be a valid positive non-zero number). Before you make your final 
-// submission, please set MAX_RESULTS back to the value 5.
-// Do not remove/alter the rest of these three lines other than to
-// tweak the value of the constant
 #ifndef MAX_RESULTS
 #define MAX_RESULTS 5
 #endif
 
-#define CMAP_CAPACITY_HINT 10000 // same as solution
+#define CMAP_CAPACITY_HINT 10000
 #define LEADER_BOARD_CAPACITY_HINT 5
 #define WORDS_CAPACITY_HINT 50
 #define MAX_STRING_LENGTH 30
