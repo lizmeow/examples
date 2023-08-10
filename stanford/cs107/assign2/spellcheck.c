@@ -43,9 +43,7 @@
  * maximum length word (including 1 more for null char).
  * The function skips over non-words, e.g. sequences of letters mixed
  * with non-letters (punctuation, digits) and truncates sequences of 
- * letters longer than the maximum length. You should not need to modify 
- * this function, just use it as-is to ensure your program exhibits the same
- * tokenization behavior as the sample.
+ * letters longer than the maximum length. 
  */
 bool read_word(FILE *fp, char buf[])
 {
