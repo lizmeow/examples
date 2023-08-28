@@ -2,30 +2,37 @@
  * File: reassemble.c
  * Author: Elizabeth Howe
  * ----------------------
+ * Background:
+ * Text fragments are created by duplicating a document many times over
+ * and chopping each copy into pieces.
+ *
  * Summary:
  * Read an input of text fragments and reassemble them.
- * Text fragments are created by duplicating a document many times over 
- * and chopping each copy into pieces. 
- * 
+ * Optimal reassembly is the shortest common superstring problem.
+ * The shortest common superstring problem is NP-hard.
+ * This program uses a greedy strategy that will find a common superstring,
+ * but is not guaranteed to find the optimal reassembly.
+ *
  * Algorithm:
  * Search for the pair of fragments that has the most overlap.
- * That is, the prefix of one fragment matches the suffix of the other,
- * or one fragment is entirely within the other. 
- * Merge these two fragments into a single fragment. 
- * Decrease the count of fragments by one. 
- * Concatenation of fragments occurs when no overlap is found in any pair. 
+ * An overlap is when one prefix of one fragment matches the
+ * suffix of the second fragment, or one fragment is entirely
+ * within the other fragment.
+ * Merge these two fragments into a single fragment.
+ * Decrease the count of fragments by one.
+ * Concatenation of fragments occurs when no overlap is found in any pair.
  * Continue until there is a single fragment.
  *
  * Args:
- * Name of the file to be reassembled.
+ * Path of the file to be reassembled.
  *
- * Result: 
+ * Result:
  * Print the final merged fragment to the console.
  *
  * Referance:
- * CS107 Stanford  
+ * CS107 Stanford
  */
- 
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -33,378 +40,323 @@
 #include <assert.h>
 
 enum {
-    MAX_FRAG_LEN = 1000,
-    MAX_FRAG_COUNT = 20000,
+    MAX_FRAG_LEN = 10000,
+    MAX_FRAG_COUNT = 5000,
     START_FRAG_TOKEN = '{',
     END_FRAG_TOKEN = '}',
 };
 
-void print_arr(char *arr[], int n) { // debugging
-    for (int i = 0; i < n; i++) {
-        printf("%d %s\n", i, arr[i]);
+#ifdef DEBUG
+# define print_arr debug_print_arr
+# define clear_buf debug_clear_buf
+#else
+# define print_arr
+# define clear_buf
+#endif
+
+#ifdef DEBUG
+void debug_print_arr(char *arr[], int n_elems)
+{
+    int i;
+    for (i = 0; i < n_elems; i++) {
+        printf("%s\n", arr[i]);
     }
-    printf("%d total fragments\n", n);
+    printf("%d total elements\n", n_elems);
 }
 
-/* Function: read_frag
- * -------------------
- * Read a single well-formed fragment from the opened FILE *.
- * Return a dynamically-allocated string 
- * (or NULL on a read failure/malformed/EOF).
- * The returned string is created using strdup, which has a malloc call
- * hidden inside of it. The returned pointer will need to be freed
- * by the caller when done to avoid memory leaks.
- */
-
-char *read_frag(FILE *fp)
+void clear_buf(char *buf, int bsize)
 {
-    int i, ch;
-    char frag[MAX_FRAG_LEN + 1];
+    memset(buf, '\0', bsize);
+}
+#endif
 
-    // find beginning of frag
+int seek_frag_start(FILE *fp)
+{
+    int ch;
+
     while (1) {
         ch = fgetc(fp);
         if (ferror(fp)) {
             perror("fgetc");
-            fclose(fp);
-            exit(1);
+            return -1;
         }
         if (feof(fp)) {
-            // no more frags left to read
-            return NULL;
+            return 0; // no more frags
         }
         if (ch == START_FRAG_TOKEN) {
-            break;
+            return START_FRAG_TOKEN;
         }
         if (!iswspace(ch)) {
-            fprintf(stderr, "Non white space char in between fragments.\b");
-            fclose(fp);
-            exit(1);
+            fprintf(stderr, "Detected non white space in between fragments.\n");
+            return -1;
         }
     }
+}
 
-    memset(frag, '\0', sizeof(frag)); // debugging
-    // read in frag
+/* Assign the next fragment to the specified pointer */
+int read_frag_body(FILE *fp, char **fragp)
+{
+    int i, ch, r;
+    char frag[MAX_FRAG_LEN + 1];
+
+    clear_buf(frag, sizeof(frag));
+
     for (i = 0; i <= MAX_FRAG_LEN; i++) {
         ch = fgetc(fp);
         if (ferror(fp)) {
             perror("fgetc");
-            fclose(fp);
-            exit(1);
+            return -1;
         }
         if (feof(fp)) {
             fprintf(stderr, "Detected malformed fragment.\n");
-            fclose(fp);
-            exit(1);
+            return -1;
         }
         if (ch == START_FRAG_TOKEN) {
             fprintf(stderr, "%c not allowed in fragments.\n", START_FRAG_TOKEN);
-            fclose(fp);
-            exit(1);
+            return -1;
         }
         if (ch == END_FRAG_TOKEN) {
-            if (i == 0) { // empty frag, not allowed
-                fprintf(stderr, "Detected empty fragment.\n"); 
-                fclose(fp);  
-                exit(1);
+            if (i == 0) { // empty frag not supported
+                fprintf(stderr, "Detected empty fragment.\n");
+                return -1;
             }
             frag[i] = '\0';
-            return strdup(frag);
+            *fragp = strdup(frag);
+            if (*fragp == NULL) {
+                perror("strdup");
+                return -1;
+            }
+            return 0;
         }
         frag[i] = ch;
     }
-
-    // frag too big
-    fprintf(stderr, "Detected fragment lenngth longer than %d.\n", MAX_FRAG_LEN);
-    fclose(fp);
-    exit(1);    
+    // Frag too big
+    fprintf(stderr, "Detected fragment length longer than %d.\n", MAX_FRAG_LEN);
+    return -1;
 }
 
-/* Function: read_all_frags
- * ------------------------
- * Read a sequence of correctly-formed fragments from the opened FILE * and
- * store them into the array. Stop when there are no more fragments to read
- * or when the array is filled to capacity (whichever comes first). The fragment
- * strings are dynamically-allocated and will need to be freed by the caller when
- * done to avoid memory leaks. The return value is the count of strings read. 
+/*
+ * Read next single well-formed fragment as a dynamically allocated string.
+ * Return 0 if fragment or end of file is found.
+ * Return -1 if an error was detected.
  */
-
-int read_all_frags(FILE *fp, char *arr[]) 
+int read_frag(FILE *fp, char **fragp)
 {
-    int i;
-    char *frag;    
+    int i, ch, r;
+    *fragp = NULL;
 
-    for (i = 0; i < MAX_FRAG_COUNT; i++) { 
-        frag = read_frag(fp);
+    r = seek_frag_start(fp);
+    if (r <= 0) {
+        return r;
+    }
+    r = read_frag_body(fp, fragp);
+    return r;
+}
+
+/*
+ * Read a sequence of fragments from the opened FILE * and
+ * store them in an array as dynamically allocated strings.
+ * Stop when there are no more fragments to read
+ * or when the array is filled to capacity.
+ * Return the number of strings read.
+ */
+int read_all_frags(FILE *fp, char *arr[])
+{
+    int i, r;
+    char *frag;
+
+    for (i = 0; i < MAX_FRAG_COUNT; i++) {
+        r = read_frag(fp, &frag);
+        if (r < 0) {
+            return r;
+        }
         if (frag == NULL) {
-            // No more frags to read
-            break;
+            break; // no more frags to read
         }
         arr[i] = frag;
     }
-
     print_arr(arr, i);
-
     return i;
 }
 
 /*
- * Function: find_max_overlap
- * ----------------------------
- * See if any prefixes in s1 equal any suffixes in s2.
- * Take a pair of strings as argument. 
- * Check for overlaps with longer lengths first.
- * Return an int (overlap found).
+ * Check if any prefixes in s1 equal any suffixes in s2.
+ * Return an int representing the length of the longest overlap found.
  */
-
-int find_max_overlap(char *s1, char *s2)
+int n_prefix_suffix_overlap(char s1[], char s2[])
 {
-    char *current;
-    char s1_clone[strlen(s1) + 1];
-    int n_current;
-    int n_s1_clone;
-    
-    // Clone s1 so we are free to manipulate it 
-    strcpy(s1_clone, s1);
+    char *s2_suffix;
+    char s1_prefix[strlen(s1) + 1];
+    int n_s2, n_s2_suffix;
+    int n_s1_prefix;
 
-    current = s2;
+    // Clone s1 so we are free to manipulate it
+    strcpy(s1_prefix, s1);
+
+    s2_suffix = s2;
+    n_s2 = strlen(s2);
+    n_s1_prefix = strlen(s1_prefix);
 
     // Find occurrences of s1[0] in s2
     while (1) {
-        current = strchr(current, s1[0]);
-        if (current == NULL) {
+        s2_suffix = strchr(s2_suffix, s1[0]);
+        if (s2_suffix == NULL) {
             break;
         }
-        // Move up the period of s1_clone if possible
-        n_current = strlen(current);
-        n_s1_clone = strlen(s1_clone);
-        if (n_current < n_s1_clone) {
-            s1_clone[n_current] = '\0';
+        // Move up the '\0' of s1_prefix as much as possible
+        n_s2_suffix = n_s2 - (int)(s2_suffix - s2);
+        if (n_s2_suffix < n_s1_prefix) {
+            n_s1_prefix = n_s2_suffix;
+            s1_prefix[n_s2_suffix] = '\0'; // terminate string
         }
-
         // Check if there is a match
-        if (strcmp(current, s1_clone) == 0) {
-            return n_current;
+        if (strcmp(s2_suffix, s1_prefix) == 0) {
+            return n_s2_suffix;
         }
-        current++;
+        s2_suffix++;
     }
-
     // No occurrence
     return 0;
 }
 
-/* Function: nullify_entry
- * ------------------------
- * Take an array of pointers to strings and an index of the array. 
- * Free the corresponding entry of the array.
- */
-
-void nullify_entry(char *a[], int n_elems, int ndx)
-{
-    assert(ndx < n_elems);
-    free(a[ndx]);
-    a[ndx] = NULL;
-}
-
-/* Function: merge
- * ----------------
- * Merge two fragments in the given array.
- * Arguments: 
- * an array of pointers to strings, 
- * the 2 indices of the fragments to merge, 
- * and overlap (int) of these two fragments.
- */
-void merge(char *a[], int ndx1, int ndx2, int overlap)
-{
-    char *s1, *s2, *result;
-    int n1, n2;
-
-    if (ndx1 < 0 || ndx2 < 0) {
-        return;        
-    }
-
-    s1 = a[ndx1];
-    s2 = a[ndx2];
-
-    n1 = strlen(s1);
-    n2 = strlen(s2);
-
-    result = malloc(n1 + n2 - overlap + 1);
-    strcpy(result, s2);  // take all of s2
-    strcat(result, s1 + overlap);  // prefix of s1 overlaps suffix of s2
-
-    free(s1);
-    a[ndx1] = result;
-}
-
-
-/* Function: count_logical_elems
-* ------------------------------
-* Precondition: all non-empty elements will be at the beginning of the 
-* array.
-*/
-int count_logical_elems(char *a[], int n_elems)
+void free_all_memory(char *a[], int n_elems)
 {
     int i;
     for (i = 0; i < n_elems; i++) {
-        if (a[i] == NULL) {
-            break;
-        }
-    }
-    return i;
-}
-
-
-/* Function: squeeze
- * ------------------
- * Take an array of pointers to strings and the size (int) of the array.
- * Iterate through the elements of the array, and for each spot 
- * that doesn't have an element, take the bottom-most element and put 
- * it in the spot. Array will have all non-NULL elements at the top.
- */
-void squeeze(char *a[], int n_elems)
-{
-    int i, j;
-
-    for (i = 0; i < n_elems; i++) {
-        if (a[i] == NULL) {
-            for (j = n_elems - 1; j > i; j--) {
-                if (a[j] != NULL) {
-                    a[i] = a[j];
-                    a[j] = NULL;
-                    break;
-                }
-            }
-        }
+        free(a[i]);
+        a[i] = NULL;
     }
 }
 
 /*
- * Function: reassemble_pass
- * -------------------------
- * Examine all pairs of fragments in the array to find
- * the pair with the maximal overlap, assuming 
- * 
- * Update the array with the merge.
- * Take an array of char *s and the number of frags in the array. 
- * Return the new number of elements in the array.
+ * The prefix of a[i] overlaps with the suffix of a[j] for n_overlap chars.
+ * Merge a[i] and a[j] into an new string.
+ * Free a[i].
+ * Store the new string in a[i].
  */
+void merge(char *a[], int i, int j, int n_overlap, int n_elems)
+{
+    char *result;
+    int n1, n2;
 
+    n1 = strlen(a[i]);
+    n2 = strlen(a[j]);
+
+    result = malloc(n1 + n2 - n_overlap + 1);
+    if (result == NULL) {
+        perror("malloc");
+        free_all_memory(a, n_elems);
+        exit(1);
+    }
+    strcpy(result, a[j]);
+    strcat(result, a[i] + n_overlap);
+
+    free(a[i]);
+    a[i] = result;
+}
+
+/*
+ * The logical length of the array is n_elems.
+ * Examine all pairs of fragments in the array to find
+ * the pair (i_save, j_save) with the maximal overlap.
+ * Update a[i_save] to point to the merged string.
+ * Free a[j_save].
+ * Update a[j_save] to point to a[n_elems - 1].
+ * Decrease the logical length of the array by 1.
+ * Return the new logical length of the array.
+ */
 int reassemble_pass(char *a[], int n_elems)
-{ 
-    char *s, *s1, *s2;
-    int i, j, n1, n2, overlap1, overlap2, n_elems_updated;
+{
+    char *s;
+    int i, j, i_save, j_save;
+    int curr_overlap;
     int max_overlap = -1;
-    int first_in_merge = -1;
-    int second_in_merge = -1;
+    int contained_flag = 0;
 
-    // Get all pairs of elems (no repeated pairs)
+    // Search through all pairs of frags
     for (i = 0; i < n_elems; i++) {
-        if (a[i] == NULL) {
-            continue;
-        }
-        for (j = i + 1; j < n_elems; j++) {
-            if (a[j] == NULL || a[i] == NULL) {
+        for (j = 0; j < n_elems; j++) {
+            if (i == j) {
                 continue;
             }
-            s1 = a[i];
-            s2 = a[j];
-            n1 = strlen(s1);
-            n2 = strlen(s2);
-                
-            // Check if one string contains the other
-            // Get rid of redundant fragments
-            if (n1 >= n2) {
-                s = strstr(s1, s2);
-                if (s != NULL) {  // s2 contained in s1
-                    nullify_entry(a, n_elems, j);
-                    continue;
+            // Check if a[j] is contained in a[i]
+            s = strstr(a[i], a[j]);
+            if (s != NULL) {
+                curr_overlap = strlen(s);
+                if (curr_overlap > max_overlap) {
+                    max_overlap = curr_overlap;
+                    i_save = i;
+                    j_save = j;
+                    contained_flag = 1;
                 }
+                continue; // no need to check for prefix/suffix overlap
             }
-            else {
-                s = strstr(s2, s1);
-                if (s != NULL) { // s1 contained in s2
-                    nullify_entry(a, n_elems, i);
-                    break; // no need to find any other pair with s1
-                }
+            // Check for the longest a[i] prefix that is also an a[j] suffix
+            curr_overlap = n_prefix_suffix_overlap(a[i], a[j]);
+            if (curr_overlap > max_overlap) {
+                max_overlap = curr_overlap;
+                i_save = i;
+                j_save = j;
+                contained_flag = 0;
             }
-            
-            if (n1 <= max_overlap && n2 <= max_overlap) {
-                continue;    // can't possibly beat max_overlap
-            }
-            overlap1 = find_max_overlap(s1, s2);
-            if (overlap1 > max_overlap) {
-                max_overlap = overlap1;
-                first_in_merge = i;
-                second_in_merge = j;
-            }
-
-            overlap2 = find_max_overlap(s2, s1);
-            if (overlap2 > max_overlap) {
-                max_overlap = overlap2;
-                first_in_merge = j;
-                second_in_merge = i;
-             }
         }
-    }    
-    merge(a, first_in_merge, second_in_merge, max_overlap);
-    nullify_entry(a, n_elems, second_in_merge);
-    squeeze(a, n_elems);
-    n_elems_updated = count_logical_elems(a, n_elems);
-
-    return n_elems_updated;
+    }
+    if (!contained_flag) {
+        merge(a, i_save, j_save, max_overlap, n_elems);
+    }
+    // a[i_save] points to the fragment to keep
+    // a[j_save] can be overwritten with the last fragment
+    free(a[j_save]);
+    a[j_save] = a[n_elems - 1];
+    a[n_elems - 1] = NULL;
+    n_elems--;
+    return n_elems;
 }
-/*
- * function: reassemble
- * ---------------------
- * Continue to call reassemble_pass until there is a one fragment in the array.
- * Args:
- * an array of char *s, 
- * an int representing the number of elements in the array.
- */
 
-void reassemble(char *a[], int n_elems)
+/* Continue to call reassemble_pass until there is a one fragment in the array */
+void reassemble(char *a[], int n_frags)
 {
-    while (n_elems > 1) {
-        n_elems = reassemble_pass(a, n_elems);
+    while (n_frags > 1) {
+        n_frags = reassemble_pass(a, n_frags);
     }
 }
 
-/* Function: main
- * --------------
- * Use the command-line argument as a filename. 
+/*
+ * Use the command-line argument as a file path.
  * Open and read all fragments from that file.
+ * On error, close the file and exit.
+ * Print the assembled solution to the console.
  */
-
-int main(int argc, char *argv[]) 
+int main(int argc, char *argv[])
 {
     char *filename;
-    char *frags[MAX_FRAG_COUNT]; 
+    char *frags[MAX_FRAG_COUNT];
     FILE *fp;
     int n_frags;
 
-    if (argc == 1) { 
-        fprintf(stderr, "You must specify a filename argument\n");
+    if (argc == 1) {
+        fprintf(stderr, "You must specify a filename argument.\n");
         exit(1);
-    }    
-    if (argc > 2) {
-       fprintf(stderr, "Ignoring excess arguments...\n"); 
     }
-
+    if (argc > 2) {
+       fprintf(stderr, "Ignoring excess arguments...\n");
+    }
     filename = argv[1]; // always take the first argument
     fp = fopen(filename, "r");
     if (fp == NULL) {
         fprintf(stderr, "Cannot open file \"%s\"\n", filename);
-        exit(1);       
-    }        
-    n_frags = read_all_frags(fp, frags);
-    fclose(fp);
-
-    if (n_frags == 0) {
-        fprintf(stderr, "File must contain at least 1 fragment\n");
         exit(1);
     }
-
+    n_frags = read_all_frags(fp, frags);
+    fclose(fp);
+    if (n_frags < 0) {
+        exit(1);
+    }
+    else
+    if (n_frags == 0) {
+        fprintf(stderr, "File must contain at least 1 fragment.\n");
+        exit(1);
+    }
     reassemble(frags, n_frags);
     printf("%s\n", frags[0]);
     free(frags[0]);
