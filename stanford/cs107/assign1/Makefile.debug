@@ -1,0 +1,12 @@
+CC = gcc
+
+CFLAGS = -g -Og -Wall 
+
+programs = reassemble
+
+all : $(programs)
+
+clean:
+	rm -f $(programs) core *.o
+
+.PHONY: clean all

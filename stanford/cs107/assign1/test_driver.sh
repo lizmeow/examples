@@ -4,6 +4,8 @@ TEST_DIR=test_set
 N_TESTS=15
 ERROR_FLAG=0
 
+make
+
 for i in $(seq 1 $N_TESTS);
 do
     ./reassemble $TEST_DIR/test$i.txt > $TEST_DIR/test$i.out 2>&1

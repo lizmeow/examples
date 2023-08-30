@@ -50,8 +50,8 @@ enum {
 # define print_arr debug_print_arr
 # define clear_buf debug_clear_buf
 #else
-# define print_arr
-# define clear_buf
+# define print_arr {}
+# define clear_buf {}
 #endif
 
 #ifdef DEBUG
@@ -64,11 +64,20 @@ void debug_print_arr(char *arr[], int n_elems)
     printf("%d total elements\n", n_elems);
 }
 
-void clear_buf(char *buf, int bsize)
+void debug_clear_buf(char *buf, int bsize)
 {
     memset(buf, '\0', bsize);
 }
 #endif
+
+void free_all_memory(char *a[], int n_elems)
+{
+    int i;
+    for (i = 0; i < n_elems; i++) {
+        free(a[i]);
+        a[i] = NULL;
+    }
+}
 
 int seek_frag_start(FILE *fp)
 {
@@ -96,7 +105,7 @@ int seek_frag_start(FILE *fp)
 /* Assign the next fragment to the specified pointer */
 int read_frag_body(FILE *fp, char **fragp)
 {
-    int i, ch, r;
+    int i, ch;
     char frag[MAX_FRAG_LEN + 1];
 
     clear_buf(frag, sizeof(frag));
@@ -142,7 +151,7 @@ int read_frag_body(FILE *fp, char **fragp)
  */
 int read_frag(FILE *fp, char **fragp)
 {
-    int i, ch, r;
+    int r;
     *fragp = NULL;
 
     r = seek_frag_start(fp);
@@ -168,6 +177,7 @@ int read_all_frags(FILE *fp, char *arr[])
     for (i = 0; i < MAX_FRAG_COUNT; i++) {
         r = read_frag(fp, &frag);
         if (r < 0) {
+            free_all_memory(arr, i);
             return r;
         }
         if (frag == NULL) {
@@ -219,15 +229,6 @@ int n_prefix_suffix_overlap(char s1[], char s2[])
     return 0;
 }
 
-void free_all_memory(char *a[], int n_elems)
-{
-    int i;
-    for (i = 0; i < n_elems; i++) {
-        free(a[i]);
-        a[i] = NULL;
-    }
-}
-
 /*
  * The prefix of a[i] overlaps with the suffix of a[j] for n_overlap chars.
  * Merge a[i] and a[j] into an new string.
@@ -268,7 +269,8 @@ void merge(char *a[], int i, int j, int n_overlap, int n_elems)
 int reassemble_pass(char *a[], int n_elems)
 {
     char *s;
-    int i, j, i_save, j_save;
+    int i, j; 
+    int i_save = -1, j_save = -1;
     int curr_overlap;
     int max_overlap = -1;
     int contained_flag = 0;
@@ -301,6 +303,10 @@ int reassemble_pass(char *a[], int n_elems)
             }
         }
     }
+    assert(max_overlap >= 0);
+    assert(i_save >= 0);
+    assert(j_save >= 0);
+
     if (!contained_flag) {
         merge(a, i_save, j_save, max_overlap, n_elems);
     }
