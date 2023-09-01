@@ -1,73 +1,129 @@
 /*
-* This is an assignment from a CS107 Stanford course (Programming paradigms).
 * Implementation of hashset in C.
-* By Elizabeth Howe 
-**/
+* Internally, the hashset is an array of buckets where collisions are
+* resolved by chaining.
+* All elements hashing to the same bucket are stored in a vector.
+*
+* Alternative approach: 
+* All elements hashing to the same bucket could 
+* be stored in a self-balanced tree for better performance, but for 
+* simplicity, this hashset implementation layers on top of my vector 
+* implementation. 
+* The client could specific a load factor to control space-time tradeoff. 
+*
+* Author:
+* Elizabeth Howe 
+*/
 
 #include "hashset.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
-void HashSetNew(hashset *h, int elemSize, int numBuckets,
-		HashSetHashFunction hashfn, HashSetCompareFunction comparefn, HashSetFreeFunction freefn) {
-	assert(elemSize > 0);
-	assert(numBuckets > 0);
-	assert(hashfn != NULL);
-	assert(comparefn !=NULL);
-	h->n_buckets = numBuckets;
+/*
+* O(B)
+* where B is the number of buckets
+*/
+void hashset_new(hashset *h, int elem_size, int num_buckets,
+	             hashset_hash_fun hash_fun,
+                 hashset_cmp_fun cmp_fun,
+                 hashset_free_fun free_fun)
+{
+    int i;
+
+	assert(elem_size > 0);
+	assert(num_buckets > 0);
+	assert(hash_fun != NULL);
+	assert(cmp_fun != NULL);
+	
+    h->n_buckets = num_buckets;
 	h->count = 0;
-	h->hash_fun = hashfn;
-	h->comp_fun = comparefn;
+	h->hash_fun = hash_fun;
+	h->comp_fun = cmp_fun;
 	h->array = (vector *)malloc(h->n_buckets * sizeof(vector));
 	assert(h->array != NULL);
-	for (int i = 0; i < h->n_buckets; i++) {
-		VectorNew(h->array + i, elemSize, freefn, 0);
+	for (i = 0; i < h->n_buckets; i++) {
+		vector_new(&h->array[i], elem_size, free_fun, 0);
 	}
 }
 
-void HashSetDispose(hashset *h) {
-	for (int i = 0; i < h->n_buckets; i++) {
-		VectorDispose(h->array + i);
+/*
+* O(N + B)
+* N = number of elements hashed
+* B = number of buckets
+*/
+void hashset_dispose(hashset *h)
+{
+    int i;
+
+	for (i = 0; i < h->n_buckets; i++) {
+		vector_dispose(&h->array[i]);
 	}
 	free(h->array);
 }
 
-int HashSetCount(const hashset *h) {
+/* O(1) */
+int hashset_count(const hashset *h)
+{
 	return h->count;
 }
 
-void HashSetMap(hashset *h, HashSetMapFunction mapfn, void *auxData) {
+/* O(N + B)
+* N = number of elements hashed
+* B = number of buckets
+*/
+void hashset_map(hashset *h, hashset_map_fun mapfn, void *aux_data)
+{
+    int i;
+
 	assert (mapfn != NULL);
-	for (int i = 0; i < h->n_buckets; i++) {
-		VectorMap(h->array + i, mapfn, auxData);
+
+	for (i = 0; i < h->n_buckets; i++) {
+		vector_map(&h->array[i], mapfn, aux_data);
 	}
 }
 
-void HashSetEnter(hashset *h, const void *elemAddr) {
-	assert(elemAddr != NULL);
-	int bucket = (h->hash_fun)(elemAddr, h->n_buckets);
+/* 
+* Expected: O(N / B), assuming hash fun evenly distributes elements 
+* N = number of elements hashed
+* B = number of buckets
+*/
+void hashset_enter(hashset *h, const void *elem_addr)
+{
+    int vec_position;
+    int bucket;
+
+	bucket = (h->hash_fun)(elem_addr, h->n_buckets);
 	assert(bucket >= 0 && bucket < h->n_buckets);
-	int position = VectorSearch(h->array + bucket, elemAddr, h->comp_fun, 0, true);
-	if (position == -1) {
-		VectorAppend(h->array + bucket, elemAddr);
-		h->count += 1;
-		VectorSort(h->array + bucket, h->comp_fun);
+
+	vec_position = vector_search(&h->array[bucket], elem_addr, h->comp_fun, 0, true);
+	if (vec_position == -1) {
+		vector_append(&h->array[bucket], elem_addr);
+		h->count++;
+		vector_sort(&h->array[bucket], h->comp_fun);
 	}
 	else {
-		VectorReplace(h->array + bucket, elemAddr, position);
+		vector_elem_replace(&h->array[bucket], elem_addr, vec_position);
 	}
 }
 
-void *HashSetLookup(const hashset *h, const void *elemAddr) {
-	assert(elemAddr != NULL);
-	int bucket = (h->hash_fun)(elemAddr, h->n_buckets);
+/* 
+* Expected: O(N / B), assuming hash fun evenly distributes elements 
+* N = number of elements hashed
+* B = number of buckets
+*/
+void *hashset_lookup(const hashset *h, const void *elem_addr)
+{
+    int vec_position;
+    int bucket;
+
+	bucket = (h->hash_fun)(elem_addr, h->n_buckets);
 	assert(bucket >= 0 && bucket < h->n_buckets);
-	int position = VectorSearch(h->array + bucket, elemAddr, h->comp_fun, 0, true);
-	if (position == -1) {
+
+	vec_position = vector_search(&h->array[bucket], elem_addr, h->comp_fun, 0, true);
+	if (vec_position == -1) {
 		return NULL;
 	}
-	else {
-		return VectorNth(h->array + bucket, position);
-	}
+
+    return vector_nth(&h->array[bucket], vec_position);
 }
