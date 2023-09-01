@@ -5,11 +5,12 @@
 * All elements hashing to the same bucket are stored in a vector.
 *
 * Alternative approach: 
-* All elements hashing to the same bucket could 
+* 1. All elements hashing to the same bucket could 
 * be stored in a self-balanced tree for better performance, but for 
 * simplicity, this hashset implementation layers on top of my vector 
 * implementation. 
-* The client could specific a load factor to control space-time tradeoff. 
+* 2. The load factor could be specified by the client to control 
+* space-time tradeoff. 
 *
 * Author:
 * Elizabeth Howe 
@@ -108,7 +109,7 @@ void hashset_enter(hashset *h, const void *elem_addr)
 }
 
 /* 
-* Expected: O(N / B), assuming hash fun evenly distributes elements 
+* Expected: O(log(N / B)), assuming hash fun evenly distributes elements 
 * N = number of elements hashed
 * B = number of buckets
 */
