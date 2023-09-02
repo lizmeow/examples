@@ -57,7 +57,7 @@ typedef void (*hashset_map_fun)(void *elem_addr, void *aux_data);
 typedef void (*hashset_free_fun)(void *elem_addr);
 
 /*
- * Construct an empty hashset.
+ * Construct an empty hashset in the caller's stack.
  * 
  * elem_size specifies the number of bytes that an element of the
  * table should take up. 

@@ -47,7 +47,7 @@ typedef void (*vector_free_fun)(void *elem_addr);
  * Usage: vector v;
  *        vector_new(&v, sizeof(char *), my_string_free, 10);
  *
- * Construct an empty vector.
+ * Construct an empty vector in the caller's stack.
  * 
  * elem_size specifies the number of bytes that a single 
  * element of the vector should take up. 
