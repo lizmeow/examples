@@ -2,13 +2,28 @@
  * File: spellcheck.c
  * Author: Elizabeth Howe
  * ----------------------
- * Program calculates the edit distance between 2 words. Program expects 2 arguments - a corpus file
- * and a document to check, or a word to check. The edit distance is the number of inertions, 
- * substitutions, or deletions that must happen to change one word to the next word. The program
- * records the top 5 words with the closest edit distance per input word. To break ties, we 
- * also use the frequencies of the words in the corpus, and finally break persisting ties 
- * alphabetically. Prints out each misspelled word (word not found in the corpus), and their 
- * suggested corrections. 
+ * Background:
+ * The edit distance is the number of insertions, substitions, or deletions
+ * that must happen to change one word to the next word.
+
+ * Summary:
+ * Given a corpus file and a document of input words (or a single input word 
+ * on a command line), print out the top 3 words in the corpus file with the 
+ * closest edit distance per input word. 
+ * Break ties according to the frequencies of the words in the corpus. 
+ * Break persisting ties alphabetically.
+ * Skip any input words that are found in the corpus file.
+ *
+ * Args:
+ * 1. A corpus file 
+ * 2. Document file of input words or a single input word
+ *
+ * Result:
+ * For each input word not found in the corpus, print to stdout the top 3 
+ * "closest" words.
+ *
+ * Reference:
+ * Stanford CS107 
  */
  
 #include <stdlib.h>
@@ -19,335 +34,350 @@
 #include "cvector.h" 
 #include "cmap.h"  
 
-#ifndef MAX_RESULTS
-#define MAX_RESULTS 5
-#endif
+enum {
+    MAX_RESULTS = 3,
+    CMAP_CAPACITY_HINT = 10000,
+    LEADER_BOARD_CAPACITY_HINT = 5,
+    WORDS_CAPACITY_HINT = 50,
+    MAX_STRING_LENGTH = 30,
+};
 
-#define CMAP_CAPACITY_HINT 10000
-#define LEADER_BOARD_CAPACITY_HINT 5
-#define WORDS_CAPACITY_HINT 50
-#define MAX_STRING_LENGTH 30
-#define min(x1, x2) \
-(x1 < x2 ? x1 : x2)
-#define min3(x1, x2, x3) \
-(x1 < x2 ? min(x1, x3) : min(x2, x3))
+#define min(x1, x2) (x1 < x2 ? x1 : x2)
+#define min3(x1, x2, x3) (x1 < x2 ? min(x1, x3) : min(x2, x3))
 
-/* Function: read_word
- * -------------------
- * Reads the next word from the opened FILE *.  A word is defined as
- * a contiguous sequence of lower/uppercase letters ended by whitespace.
- * If such a word is successfully read, it is stored in buf and the 
- * function returns true. If there are no more words to be read, the
- * function returns false and the contents of buf are unreliable. The 
- * client is responsible for ensuring buf is large enough to hold the 
- * maximum length word (including 1 more for null char).
- * The function skips over non-words, e.g. sequences of letters mixed
- * with non-letters (punctuation, digits) and truncates sequences of 
- * letters longer than the maximum length. 
+/* 
+ * Define the struct that populates the leader board of suggested corrected 
+ * spellings. 
+ * Keep track of the edit distance,
+ * the frequency of the word in the corpus, 
+ * and the suggested corrected word spelling.
+ */
+typedef struct {
+    int dist;
+    int freq;
+    char *s;
+} Correction;
+
+void s_tolower(char *s) {
+    for (int i = 0; s[i] != '\0'; i++) {
+        s[i] = tolower(s[i]);
+    }
+}
+
+/* 
+ * Read the next word from the opened FILE *.  
+ * A word is defined as a contiguous sequence of lower/uppercase letters 
+ * ended by whitespace.
+ * Skip over non-words, e.g. sequences of letters mixed with non-letters 
+ * (punctuation, digits) and truncates sequences of letters longer than 
+ * the maximum length.
+ * Return true if the next word is successfully read and store this word in 
+ * buf.
+ * Return false if there are no more words left to read or if there is a file 
+ * error, in which case the contents of buf are unreliable. 
  */
 bool read_word(FILE *fp, char buf[])
 {
-	while (true) { // keep reading until good word or EOF
-		if (fscanf(fp, " %30[a-zA-Z]", buf) == 1) { // read at most 30 letters
-			int ch = getc(fp);                      // peek at next char
-			if (isspace(ch) || ch == EOF) return true; // accept if end space/EOF
-			ungetc(ch, fp);                         // otherwise, put char back
-		}
-		if (fscanf(fp,"%*s") == EOF) return false; //%*s reads rest of token and discards
+    int ch;
+    char format_buf[16];
+    sprintf(format_buf, " %%%d[a-zA-Z]", MAX_STRING_LENGTH);
+
+    while (true) {
+        // Read at most 30 letters, consume but not store leading white space
+        if (fscanf(fp, format_buf, buf) == 1) {
+            ch = getc(fp); // peek at next char
+            if (isspace(ch) || ch == EOF) {
+                return true; // accept if space/EOF
+            }
+            ungetc(ch, fp); // otherwise, put char back
+        }
+        if (fscanf(fp,"%*s") == EOF) {
+            return false; //%*s reads rest of token and discards
+        }
     }
 }
 
 /*
- * Builds a map based on the frequencies of each word in the corpus. The keys are the words 
- * in the corups, and the values are the corresponding frequencies. Takes a file handle as 
- * argument, and returns a pointer to the resulting map.
+ * Return a pointer to a map. 
+ * Return NULL on read error.
+ * The keys in the map are the words corpus file. 
+ * The values are the corresponding frequencies in the corpus file.
  */
-CMap *buildMap(FILE *fp)
+CMap *build_map(FILE *fp)
 {
-	int freq;
-	char buf[MAX_STRING_LENGTH + 1];
-		
-	CMap *m = cmap_create(sizeof(int), CMAP_CAPACITY_HINT, NULL); // XXX hint
-	if (m == NULL) {
-		printf("can't create map\n");
-		exit(1);
-	}
-	while (read_word(fp, buf)) {
-		char *s = strdup(buf);
-		for (int i = 0; s[i] != '\0'; i++) {
-			s[i] = tolower(s[i]);
-		}
-		int *p = (int *)cmap_get(m, s);
-		if (p == NULL) { // if word is not in map already
-			freq = 1;
-			cmap_put(m, s, &freq);
-		}
-		else { // otherwise update frequency
-			freq = *p;
-			freq++;
-			cmap_put(m, s, &freq);
-		}
-		free(s);
-	}
-	return m;
+    int freq;
+    int *p;
+    char buf[MAX_STRING_LENGTH + 1];
+        
+    CMap *m = cmap_create(sizeof(int), CMAP_CAPACITY_HINT, NULL);
+    while (read_word(fp, buf)) {
+        s_tolower(buf);
+        p = (int *)cmap_get(m, buf);
+        if (p == NULL) { // if word is not in map already
+            freq = 1;
+        }
+        else { // otherwise update frequency
+            freq = *p + 1;
+        }
+        cmap_put(m, buf, &freq);
+    }
+    if (ferror(fp)) {
+        perror("read corpus");
+        cmap_dispose(m);
+        return NULL;
+    }
+    return m;
+}
+
+/* Return true if a word is a key in the map, else return false. */
+bool is_found(CMap *m, const char *word) 
+{
+    int *p = (int *)cmap_get(m, word);
+    if (p == NULL) {
+        return false;
+    }
+    return true;
 }
 
 /*
- * Checks to see if the word is found in the corpus (map). Returns a bool, 
- * and takes as arguments a pointer ot a map and a pointer to a word to check.
+ * Return edit distance between two words as long as this edit distance is 
+ * less than max_edit_dist_allowed.
+ * Return an int greater than MAX_STRING_LENGTH if the edit distance is 
+ * at least the max_edit_dist_allowed.
+ * Here, a substitution is penalized by 1 (in some definitions, a substitution
+ * is penalized by 2).
+ * XXX TO DO: cache intermediate calculations in a table and avoid recursion. 
  */
-bool isFound(CMap *m, const char *word) 
+int edit_dist(const char *s1, const char *s2, int max_edit_dist_allowed)
 {
-	int *p = (int *)cmap_get(m, word);
-	if (p == NULL) {
-		return false;
-	}
-	return true;
+    int insertion_s1, insertion_s2, sub, match;
+    
+    if (max_edit_dist_allowed == 0 && strcmp(s1, s2) != 0) {
+        // Edit distance between s1 and s2 is at least max_edit_dist_allowed,
+        // stop calculating early.
+        return MAX_STRING_LENGTH + 1;
+    }
+    if (*s1 == '\0') {
+        return strlen(s2);
+    }
+    if (*s2 == '\0') {
+        return strlen(s1);
+    }
+    insertion_s1 = edit_dist(s1 + 1, s2, max_edit_dist_allowed - 1) + 1;
+    insertion_s2 = edit_dist(s1, s2 + 1, max_edit_dist_allowed - 1) + 1;
+
+    if (*s1 == *s2) {
+        match = edit_dist(s1 + 1, s2 + 1, max_edit_dist_allowed);
+        return min3(insertion_s1, insertion_s2, match);
+    }
+    else {
+        sub = edit_dist(s1 + 1, s2 + 1, max_edit_dist_allowed - 1) + 1;
+        return min3(insertion_s1, insertion_s2, sub);
+    }
 }
 
 /*
- * Calculates the edit distance between two given words. Takes as input two char *s and 
- * a cutoff int of the number to beat. Function stops calculating once it knows it cannot 
- * beat the int beatThis. Returns an int representing the edit distance, or else a number 
- * greater than the edit distance if it knows it can't beat it. 
- */
-int edist(const char *s1, const char *s2, int beatThis)
-{
-	if ((beatThis == 0) && (strcmp(s1, s2) != 0)) { // can't beat this
-		return MAX_STRING_LENGTH + 1;
-	}
-	if (*s1 == '\0') {
-		return strlen(s2);
-	}
-	if (*s2 == '\0') {
-		return strlen(s1);
-	}
-
-	int insertion1, insertion2, subOrMatch;
-
-	insertion1 = edist(s1 + 1, s2, beatThis - 1) + 1; // insertion in s1
-	insertion2 = edist(s1, s2 + 1, beatThis - 1) + 1; // insertion in s2
-
-	if (*s1 == *s2) {
-		subOrMatch = edist(s1 + 1, s2 + 1, beatThis); // match
-	}
-	else {
-		subOrMatch = edist(s1 + 1, s2 + 1, beatThis - 1) + 1; // substitution
-	}
-	
-	int d =  min3(insertion1, insertion2, subOrMatch);
-	return d;
-}
-
-/* 
- * Defining the struct that populates the leader board. Correction keeps track of the edit distance,
- * the frequency of the word in the corpus, and the suggested correction.
- */
-typedef struct correction {
-	int dist;
-	int freq;
-	char *s;
-} Correction;
-
-/*
- * To compare two corrections and see which is better. Takes two void *s and 
- * returns an int. It returns a positive number if the better correction is 
- * the second argument, zero if they are equally better, and negative if the 
- * first argument is better.
+ * Return a positive number if p2 is the better correction.
+ * Return zero if the corrections are equal.
+ * Return a negative number if p1 is the better correction.
  */
 int cmp_correction(const void *p1, const void *p2) 
 {
-	const Correction *c1, *c2;
-	c1 = p1;
-	c2 = p2;
+    const Correction *c1, *c2;
 
-	if (c1->dist != c2->dist) {
-		return c1->dist - c2->dist;
-	}
-	if (c1->freq != c2->freq) {
-		return c2->freq - c1->freq;
-	}
-	return strcmp(c1->s, c2->s);
+    c1 = p1;
+    c2 = p2;
+
+    if (c1->dist != c2->dist) {
+        return c1->dist - c2->dist;
+    }
+    if (c1->freq != c2->freq) {
+        return c2->freq - c1->freq;
+    }
+    return strcmp(c1->s, c2->s);
 }
 
-/*
- * The compare function pointer to use in the vector search function. Compares 
- * two words using hte strcmp function. If a given word is found in the vector 
- * already, will return a 0.
- */
 int cmp_words(const void *p1, const void *p2)
 {
-	const char *s1, *s2;
-	s1 = *(char **)p1;
-	s2 = *(char **)p2;
+    const char *s1, *s2;
 
-	return strcmp(s1, s2);
+    s1 = *(char **)p1;
+    s2 = *(char **)p2;
+
+    return strcmp(s1, s2);
 }
 
 /*
- * Updates the leader board according to whether the leader board is partially full
- * or whether it is full. If it is full, we relapce the last struct and sort. If it 
- * is partially full, we append and sort. Takes a pointer to a map, a pointer to 
- * vector (leader board), a pointer to the word in question, and a bool saying if we 
- * should append or not. Returns an int representing the next edit distance to beat.
+ * If the leader board is full, compare the last correction in the leader board
+ * with a new correction containing word. If the new correction is better, 
+ * replace the last correction with the new correction and sort. 
+ * Otherwise if the leader board is not full, append a new correction containing
+ * s and sort.
+ * Return the maximum edit distance contained in the leader board.
+ * Precondition: corpus_map is known to contain word.
  */
-int updateLeaderBoard(CMap *m, CVector *v, const char *s, int d, bool doAppend)
+int update_leader_board(CMap *corpus_map, CVector *leader_board, 
+                        const char *word, int d)
 {
-	int beatThis = INT_MAX;
-	Correction c, *p;
+    int max_edit_dist_allowed, leader_board_count;
+    Correction c, *p;
 
-	c.dist = d;
-	c.s = strdup(s);
-	c.freq = *(int *) cmap_get(m, s);
-
-	if (doAppend) { // leader board partial
-		cvec_append(v, &c);
-		cvec_sort(v, cmp_correction);
-	}
-	else { // leader board is full
-		p = cvec_nth(v, MAX_RESULTS - 1);
-		if (cmp_correction(&c, p)  < 0)	 { // if better, replace last struct and sort
-			cvec_replace(v, &c, MAX_RESULTS - 1);
-			cvec_sort(v, cmp_correction);
-		}
-		else { // not appending or replacing
-			free(c.s); // undo strdup
-		}
-		p = (Correction *)cvec_nth(v, MAX_RESULTS - 1);
-		beatThis = p->dist; 
-	}
-	return beatThis;
+    leader_board_count = cvec_count(leader_board);
+    memset(&c, 0, sizeof(c));
+    c.dist = d;
+    c.s = strdup(word);
+    c.freq = *(int *)cmap_get(corpus_map, word);
+    
+    if (leader_board_count == MAX_RESULTS) { // leader_board is full
+        p = cvec_nth(leader_board, MAX_RESULTS - 1);
+        if (cmp_correction(&c, p)  < 0)	 { // if better, replace last struct
+            cvec_replace(leader_board, &c, MAX_RESULTS - 1);
+            cvec_sort(leader_board, cmp_correction);
+        }
+        else { // not appending or replacing
+            free(c.s); // undo strdup
+        }
+        p = cvec_nth(leader_board, MAX_RESULTS - 1);
+        max_edit_dist_allowed = p->dist; 
+    }
+    else { // leader board is not full
+        cvec_append(leader_board, &c);
+        cvec_sort(leader_board, cmp_correction);
+        // Max possible edit distance between any pair of words in this program
+        max_edit_dist_allowed = MAX_STRING_LENGTH;
+    }
+    return max_edit_dist_allowed;
 }
 
-/*
- * Find the best alternate spellings for a known misspelled word. Takes as argument
- * a pointer ot a map built from the corpus, a pointer to the word in question, a pointer 
- * to the vector storing the leader board, and a bool representing if we should print success.
- */ 
-void spellCheck(CMap *m, const char *word, CVector *v, bool printOk)
+/* Print the best alternate spellings for a word to stdout. */ 
+void spellcheck(CMap *corpus_map, const char *word, 
+                CVector *leader_board, bool print_correct_words)
 {
-	int beatThis = INT_MAX;
+    int max_edit_dist_allowed = MAX_STRING_LENGTH;
+    int d;
+    const char *corpus_word;
+    Correction *correctionp;
 
-	if (isFound(m, word)) {
-		if (printOk) {
-			printf("\'%s\' spelled correctly.\n", word);
-		}
-		return;
-	}	
-	for (const char *s = cmap_first(m); s !=NULL; s = cmap_next(m, s)) {
-		int d = edist(s, word, beatThis);
-		if (d > MAX_STRING_LENGTH)
-			continue;
-		int count = cvec_count(v);
-		if (count < MAX_RESULTS) {
-			beatThis = updateLeaderBoard(m, v, s, d, true);
-		}
-		else { // we already have max elements in our vector
-			beatThis = updateLeaderBoard(m, v, s, d, false);
-		}
-	}
-	printf("%s:", word);
-	for (Correction *cv = (Correction *)cvec_first(v); cv != NULL; cv = (Correction *)cvec_next(v, cv)) {
-		printf(" %s",cv->s);
-	}
-	printf("\n");
+    if (is_found(corpus_map, word)) {
+        if (print_correct_words) {
+            printf("\'%s\' spelled correctly.\n", word);
+        }
+        return;
+    }	
+    for (corpus_word = cmap_first(corpus_map); corpus_word !=NULL; 
+         corpus_word = cmap_next(corpus_map, corpus_word)) {
+
+        d = edit_dist(corpus_word, word, max_edit_dist_allowed);
+        if (d > MAX_STRING_LENGTH) {
+            // Edit dist between word and corpus word >= max_edit_dist_allowed
+            continue;
+        }
+        max_edit_dist_allowed = update_leader_board(corpus_map, leader_board, 
+                                                    corpus_word, d);
+    }
+    printf("%s:", word);
+    for (correctionp = cvec_first(leader_board); correctionp != NULL; 
+         correctionp = cvec_next(leader_board, correctionp)) {
+        
+        printf(" %s",correctionp->s);
+    }
+    printf("\n");
 }
 
-/*
- * Cleanup function for the leader board vector. Takes a void *.
- */
-void cleanup_cvec(void *p)
+/* Cleanup function for the leader board vector. */
+void cleanup_leader_board(void *p)
 {
-	Correction *c;
-	c = p;
-
-	free(c->s); // undo strdup
+    Correction *c = p;
+    free(c->s); // undo strdup
 }
 
-/*
- * Cleanup function for the misspelled words vector. Takes a void *.
- */
-void cleanup_cvec2(void *p)
+/* Cleanup function for the misspelled words vector. */
+void cleanup_misspellings(void *p)
 {
-	char *s;
-	s = *(char **)p;
-
-	free(s); // undo strdup
+    char *s = *(char **)p;
+    free(s); // undo strdup
 }
 
-/*
- * Finds all the misspellings in the document. Makes sure our missellings are unique.
- * Takes a pointer to the corpus map, a FILE * for the second document, and a pointer to 
- * the vector holding the misspellings.
- */
-void collectMisspellings(CMap *m, FILE *fp2, CVector *words)
+/* Find all unique misspellings in the document. 
+* XXX TO DO: misspellings should be a map 
+*/
+void collect_misspellings(CMap *corpus_map, FILE *fp, CVector *misspellings)
 {
-	char buf[MAX_STRING_LENGTH + 1];
-	while(read_word(fp2, buf)) {
-		char *s = strdup(buf);
-		for (int i = 0; s[i] != '\0'; i++) {
-			s[i] = tolower(s[i]);
-		}			
-		int match = cvec_search(words, &s, cmp_words, 0, true);
-		if (match == -1) { // not already in the vector
-			if (!isFound(m, s)) { // if not in corpus, we have misspellling
-				cvec_append(words, &s); // add to our misspelling vector, words
-				cvec_sort(words, cmp_words); // XXX does this speed up cvec_search
-			}
-		}		
-	}
+    char *word;
+    int i, match;
+    char buf[MAX_STRING_LENGTH + 1];
+
+    while(read_word(fp, buf)) {
+        word = strdup(buf);
+        s_tolower(word);
+        match = cvec_search(misspellings, &word, cmp_words, 0, true);
+        if (match == -1) {
+            if (!is_found(corpus_map, word)) {
+                cvec_append(misspellings, &word);
+                cvec_sort(misspellings, cmp_words);
+            }
+        }		
+    }
 }
 
 int main(int argc, char *argv[]) 
-{     
-	if (argc != 3) {
-		fprintf(stderr, "%s: you must specify the corpus and what-to-check. The what-to-check argument can be a single word or document.\n", argv[0]);
-		exit(1);
-	} 
-	FILE *fp = fopen(argv[1], "r");
-	if (fp == NULL) {
-		fprintf(stderr, "%s: can't open\n", argv[1]);
-		exit(1);
-	}
-	CMap *m = buildMap(fp);
-	fclose(fp);	
+{   
+    bool print_correct_words;
+    char *word; 
+    char **wordp;
+    FILE *fp;
+    CMap *corpus_map;
+    CVector *misspellings;
 
-	CVector *words = cvec_create(sizeof(char *), WORDS_CAPACITY_HINT, cleanup_cvec2);
-	if (words == NULL) {
-		fprintf(stderr, "can't create vector of misspellings\n");
-		exit(1);
-	}
-		
-	bool printOk; // flag to print correctly spelled word
+    if (argc != 3) {
+        fprintf(stderr, "%s: you must specify the corpus and what-to-check. "
+                        "The what-to-check argument can be a single word or " 
+                        "document.\n", argv[0]);
+        exit(1);
+    } 
+    fp = fopen(argv[1], "r");
+    if (fp == NULL) {
+        perror(argv[1]);
+        exit(1);
+    }
+    corpus_map = build_map(fp);
+    fclose(fp);
+    if (corpus_map == NULL) {
+        perror(argv[1]);
+        exit(1);
+    }
+    misspellings = cvec_create(sizeof(char *), WORDS_CAPACITY_HINT, 
+                               cleanup_misspellings);
+        
+    fp = fopen(argv[2], "r");
+    if (fp != NULL) {
+        print_correct_words = false;
+        collect_misspellings(corpus_map, fp, misspellings);
+        fclose(fp);
+    }
+    else {
+        print_correct_words = true;
+        if (strlen(argv[2]) > MAX_STRING_LENGTH) {
+            fprintf(stderr, "word longer than limit of %d \n", MAX_STRING_LENGTH);
+            cvec_dispose(misspellings);
+            cmap_dispose(corpus_map);
+            exit(1);
+        }
+        word = strdup(argv[2]);
+        s_tolower(word);
+        cvec_append(misspellings, &word);
+    }	
 
-	FILE *fp2 = fopen(argv[2], "r");
-	if (fp2 != NULL) {
-		printOk = false;
-		collectMisspellings(m, fp2, words);
-	}
-	else {
-		printOk = true;
-		if (strlen(argv[2]) > MAX_STRING_LENGTH) {
-			fprintf(stderr, "word longer than limit of %d \n", MAX_STRING_LENGTH);
-			exit(1);
-		}
-			
-		char *s = strdup(argv[2]);
-		for (int i = 0; s[i] != '\0'; i++) {
-			s[i] = tolower(s[i]);
-		}			
-		cvec_append(words, &s);
-	}	
-
-	char *s;
-	for(char **sp = (char **)cvec_first(words); sp != NULL; sp = (char **)cvec_next(words, sp)) {
-		s = *sp;
-		CVector *v = cvec_create(sizeof(Correction), LEADER_BOARD_CAPACITY_HINT, cleanup_cvec);
-		spellCheck(m, s, v, printOk); 
-		cvec_dispose(v);
-	}
-	cvec_dispose(words);
-	cmap_dispose(m);
-	return 0;
+    for(wordp = (char **)cvec_first(misspellings); wordp != NULL; 
+        wordp = (char **)cvec_next(misspellings, wordp)) {
+        
+        CVector *leader_board = cvec_create(sizeof(Correction), 
+                                            LEADER_BOARD_CAPACITY_HINT, 
+                                            cleanup_leader_board);
+        spellcheck(corpus_map, *wordp, leader_board, print_correct_words); 
+        cvec_dispose(leader_board);
+    }
+    cvec_dispose(misspellings);
+    cmap_dispose(corpus_map);
+    return 0;
 }
-
