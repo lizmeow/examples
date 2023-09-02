@@ -197,22 +197,12 @@ int cmp_correction(const void *p1, const void *p2)
     return strcmp(c1->s, c2->s);
 }
 
-int cmp_words(const void *p1, const void *p2)
-{
-    const char *s1, *s2;
-
-    s1 = *(char **)p1;
-    s2 = *(char **)p2;
-
-    return strcmp(s1, s2);
-}
-
 /*
  * If the leader board is full, compare the last correction in the leader board
  * with a new correction containing word. If the new correction is better, 
  * replace the last correction with the new correction and sort. 
  * Otherwise if the leader board is not full, append a new correction containing
- * s and sort.
+ * word and sort.
  * Return the maximum edit distance contained in the leader board.
  * Precondition: corpus_map is known to contain word.
  */
@@ -291,43 +281,28 @@ void cleanup_leader_board(void *p)
     free(c->s); // undo strdup
 }
 
-/* Cleanup function for the misspelled words vector. */
-void cleanup_misspellings(void *p)
+/* Find all unique misspellings in the document. */
+void collect_misspellings(CMap *corpus_map, FILE *fp, CMap *misspellings_map)
 {
-    char *s = *(char **)p;
-    free(s); // undo strdup
-}
-
-/* Find all unique misspellings in the document. 
-* XXX TO DO: misspellings should be a map 
-*/
-void collect_misspellings(CMap *corpus_map, FILE *fp, CVector *misspellings)
-{
-    char *word;
-    int i, match;
+    int default_key;
     char buf[MAX_STRING_LENGTH + 1];
 
+    default_key = 1; // map values here don't matter
+
     while(read_word(fp, buf)) {
-        word = strdup(buf);
-        s_tolower(word);
-        match = cvec_search(misspellings, &word, cmp_words, 0, true);
-        if (match == -1) {
-            if (!is_found(corpus_map, word)) {
-                cvec_append(misspellings, &word);
-                cvec_sort(misspellings, cmp_words);
-            }
-        }		
+        s_tolower(buf);
+        cmap_put(misspellings_map, buf, &default_key);
     }
 }
 
 int main(int argc, char *argv[]) 
 {   
     bool print_correct_words;
-    char *word; 
-    char **wordp;
+    int default_key;
+    const char *word; 
     FILE *fp;
     CMap *corpus_map;
-    CVector *misspellings;
+    CMap *misspellings_map;
 
     if (argc != 3) {
         fprintf(stderr, "%s: you must specify the corpus and what-to-check. "
@@ -346,38 +321,37 @@ int main(int argc, char *argv[])
         perror(argv[1]);
         exit(1);
     }
-    misspellings = cvec_create(sizeof(char *), WORDS_CAPACITY_HINT, 
-                               cleanup_misspellings);
+    misspellings_map = cmap_create(sizeof(int), WORDS_CAPACITY_HINT, NULL);
         
     fp = fopen(argv[2], "r");
     if (fp != NULL) {
         print_correct_words = false;
-        collect_misspellings(corpus_map, fp, misspellings);
+        collect_misspellings(corpus_map, fp, misspellings_map);
         fclose(fp);
     }
     else {
-        print_correct_words = true;
         if (strlen(argv[2]) > MAX_STRING_LENGTH) {
             fprintf(stderr, "word longer than limit of %d \n", MAX_STRING_LENGTH);
-            cvec_dispose(misspellings);
+            cmap_dispose(misspellings_map);
             cmap_dispose(corpus_map);
             exit(1);
         }
-        word = strdup(argv[2]);
-        s_tolower(word);
-        cvec_append(misspellings, &word);
+        print_correct_words = true;
+        default_key = 1; // map value here doesn't matter
+        s_tolower(argv[2]);
+        cmap_put(misspellings_map, argv[2], &default_key);
     }	
 
-    for(wordp = (char **)cvec_first(misspellings); wordp != NULL; 
-        wordp = (char **)cvec_next(misspellings, wordp)) {
+    for(word = cmap_first(misspellings_map); word != NULL; 
+        word = cmap_next(misspellings_map, word)) {
         
         CVector *leader_board = cvec_create(sizeof(Correction), 
                                             LEADER_BOARD_CAPACITY_HINT, 
                                             cleanup_leader_board);
-        spellcheck(corpus_map, *wordp, leader_board, print_correct_words); 
+        spellcheck(corpus_map, word, leader_board, print_correct_words); 
         cvec_dispose(leader_board);
     }
-    cvec_dispose(misspellings);
+    cmap_dispose(misspellings_map);
     cmap_dispose(corpus_map);
     return 0;
 }
