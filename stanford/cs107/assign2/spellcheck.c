@@ -132,7 +132,7 @@ CMap *build_map(FILE *fp)
 }
 
 /* Return true if a word is a key in the map, else return false. */
-bool is_found(CMap *m, const char *word)
+bool is_found(const CMap *m, const char *word)
 {
     int *p = (int *)cmap_get(m, word);
     if (p == NULL) {
@@ -205,7 +205,7 @@ int cmp_correction(const void *p1, const void *p2)
  * Return the maximum edit distance contained in the leader board.
  * Precondition: corpus_map is known to contain word.
  */
-int update_leader_board(CMap *corpus_map, CVector *leader_board,
+int update_leader_board(const CMap *corpus_map, CVector *leader_board,
                         const char *word, int d)
 {
     int curr_max_edit_dist, leader_board_count;
@@ -239,7 +239,7 @@ int update_leader_board(CMap *corpus_map, CVector *leader_board,
 }
 
 /* Print the best alternate spellings for a word to stdout. */
-void spellcheck(CMap *corpus_map, const char *word,
+void spellcheck(const CMap *corpus_map, const char *word,
                 CVector *leader_board, bool print_correct_words)
 {
     int curr_max_edit_dist = MAX_STRING_LENGTH;
@@ -265,7 +265,6 @@ void spellcheck(CMap *corpus_map, const char *word,
          correctionp = cvec_next(leader_board, correctionp)) {
 
         printf(" %s",correctionp->s);
-
     }
     printf("\n");
 }
@@ -278,7 +277,7 @@ void cleanup_leader_board(void *p)
 }
 
 /* Find all unique misspellings in the document. */
-void collect_misspellings(CMap *corpus_map, FILE *fp, CMap *misspellings_map)
+void collect_misspellings(const CMap *corpus_map, FILE *fp, CMap *misspellings_map)
 {
     int default_key;
     char buf[MAX_STRING_LENGTH + 1];
