@@ -38,13 +38,13 @@ typedef int (*comp_fun)(const void *addr1, const void *addr2);
  */
 typedef void (*free_fun)(void *addr);
 
-/* Defines the CVector type. */
+/* Define the CVector type. */
 typedef struct CVector_internals CVector;
 
 /*
  * Create a dynamically-allocated empty CVector and returns a pointer to it.
- *
  * O(1) time.
+ *
  * elemsz specifies the size, in bytes, of the type of elements
  * that will be stored in the CVector.
  *

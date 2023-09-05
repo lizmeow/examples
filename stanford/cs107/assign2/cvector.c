@@ -1,5 +1,5 @@
 /*
- * Implementation of a vector in C.
+ * Implementation of the CVector API.
  * Internally, the elemnts of the vector are stored contiguously in an
  * array for constant time random access.
  *
@@ -51,8 +51,8 @@ void cvec_dispose(CVector *cv)
     int i;
     char *p;
 
-    if(cv->clean != NULL) {
-        for(i = 0; i < cv->logical_length; i++) {
+    if (cv->clean != NULL) {
+        for (i = 0; i < cv->logical_length; i++) {
             p = (char *)cv->elems + i * cv->elem_size;
             (cv->clean)(p);
             p = NULL;
@@ -192,7 +192,7 @@ void *cvec_first(const CVector *cv)
     if(cv->logical_length == 0) {
         return NULL;
     }
-    else return cv->elems;
+    return cv->elems;
 }
 
 void *cvec_next(const CVector *cv, const void *prev)
