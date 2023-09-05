@@ -1,0 +1,1 @@
+./spellcheck: you must specify the corpus and what-to-check. The what-to-check argument can be a single word or document.

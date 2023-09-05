@@ -1,6 +1,6 @@
 CC = gcc
 
-CFLAGS = -O2 -std=gnu99
+CFLAGS = -g -Og -std=gnu99
 
 all: spellcheck
 

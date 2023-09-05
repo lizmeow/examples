@@ -220,7 +220,7 @@ int update_leader_board(const CMap *corpus_map, CVector *leader_board,
     if (leader_board_count == MAX_RESULTS) { // leader_board is full
         p = cvec_nth(leader_board, MAX_RESULTS - 1);
         if (cmp_correction(&c, p)  < 0)	 { // if better, replace last struct
-            cvec_replace(leader_board, &c, MAX_RESULTS - 1);
+            cvec_elem_replace(leader_board, &c, MAX_RESULTS - 1);
             cvec_sort(leader_board, cmp_correction);
         }
         else { // not appending or replacing
