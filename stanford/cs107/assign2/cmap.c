@@ -170,7 +170,7 @@ void cmap_put(CMap *cm, const char *key, const void *addr)
         set_next_in_entry(node, front_node);
     }
     cm->buckets[bucket_num] = node;
-    (cm->count)++;
+    cm->count++;
 }
 
 void *cmap_get(const CMap *cm, const char *key)
