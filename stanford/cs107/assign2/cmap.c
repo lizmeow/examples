@@ -5,7 +5,7 @@
  * of memory consisting of:
  * 1. void * pointing to the next entry in the linked list
  * 2. array of chars representing the key
- * 3. void * pointing to the value of the current entry
+ * 3. the value of the current entry
  * Use pointer arithmetic as necessary to get/set.
  *
  * XXX Use a Node struct rather than explicitly calculating offsets to
