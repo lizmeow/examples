@@ -8,9 +8,11 @@
  * 3. the value of the current entry
  * Use pointer arithmetic as necessary to get/set.
  *
- * XXX Use a Node struct rather than explicitly calculating offsets to
- * implicit fields.
- *
+ * An alternative approach would be to use a struct for each entry. 
+ * Since the value type is unknown, this would require a malloc for each value.
+ * Although this approach would enhance the readability of the code, it could
+ * dramatically slow performance for cases where value size is small.
+ * 
  * Author:
  * Elizabeth Howe
  */
