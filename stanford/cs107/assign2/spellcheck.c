@@ -202,13 +202,12 @@ int cmp_correction(const void *p1, const void *p2)
  * replace the last correction with the new correction and sort.
  * Otherwise if the leader board is not full, append a new correction containing
  * word and sort.
- * Return the maximum edit distance contained in the leader board.
  * Precondition: corpus_map is known to contain word.
  */
-int update_leader_board(const CMap *corpus_map, CVector *leader_board,
-                        const char *word, int d)
+void update_leader_board(const CMap *corpus_map, CVector *leader_board,
+                         const char *word, int d)
 {
-    int curr_max_edit_dist, leader_board_count;
+    int leader_board_count;
     Correction c, *p;
 
     leader_board_count = cvec_count(leader_board);
@@ -227,22 +226,17 @@ int update_leader_board(const CMap *corpus_map, CVector *leader_board,
             free(c.s); // undo strdup
         }
         p = cvec_nth(leader_board, MAX_RESULTS - 1);
-        curr_max_edit_dist = p->dist;
     }
     else { // leader board is not full
         cvec_append(leader_board, &c);
         cvec_sort(leader_board, cmp_correction);
-        // Max possible edit distance between any pair of words in this program
-        curr_max_edit_dist = MAX_STRING_LENGTH;
     }
-    return curr_max_edit_dist;
 }
 
 /* Print the best alternate spellings for a word to stdout. */
 void spellcheck(const CMap *corpus_map, const char *word,
                 CVector *leader_board, bool print_correct_words)
 {
-    int curr_max_edit_dist = MAX_STRING_LENGTH;
     int d;
     const char *corpus_word;
     Correction *correctionp;
@@ -257,8 +251,7 @@ void spellcheck(const CMap *corpus_map, const char *word,
          corpus_word = cmap_next(corpus_map, corpus_word)) {
 
         d = edit_dist(corpus_word, word);
-        curr_max_edit_dist = update_leader_board(corpus_map, leader_board,
-                                                    corpus_word, d);
+        update_leader_board(corpus_map, leader_board, corpus_word, d);
     }
     printf("%s:", word);
     for (correctionp = cvec_first(leader_board); correctionp != NULL;
