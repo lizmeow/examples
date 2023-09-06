@@ -21,7 +21,7 @@ make -f Makefile.debug
 
 # Usage tests
 r=$(valgrind ./spellcheck $TEST_DIR/corpus1.txt 2>&1)
-echo "$r" | grep "$KEY_PHRASE" > /dev/null
+echo "$r" | grep -q "$KEY_PHRASE"
 if [ $? -ne 0 ]; then
     printf "Usage args test did not pass valgrind.\n"
     ERROR_FLAG=1
@@ -31,7 +31,7 @@ fi
 for i in "${!USAGE_WORDS[@]}";
 do
     r=$(valgrind ./spellcheck $TEST_DIR/corpus1.txt "${USAGE_WORDS[i]}" 2>&1)
-    echo "$r" | grep "$KEY_PHRASE" > /dev/null
+    echo "$r" | grep -q "$KEY_PHRASE"
     if [ $? -ne 0 ]; then
         printf "${USAGE_WORDS[i]} input word did not pass valgrind using corpus $TEST_DIR/corpus1.txt.\n"
         ERROR_FLAG=1
@@ -41,7 +41,7 @@ done
 for i in "${!TEST_WORDS[@]}";
 do
     r=$(valgrind ./spellcheck $TEST_DIR/corpus2.txt "${TEST_WORDS[i]}" 2>&1)
-    echo "$r" | grep "$KEY_PHRASE" > /dev/null
+    echo "$r" | grep -q "$KEY_PHRASE"
     if [ $? -ne 0 ]; then
         printf "${TEST_WORDS[i]} input word did not pass valgrind using corpus $TEST_DIR/corpus2.txt.\n"
         ERROR_FLAG=1
@@ -50,7 +50,7 @@ done
 
 # Function tests with words contained in a document
 r=$(valgrind ./spellcheck tests/corpus1.txt tests/doc1.txt 2>&1)
-echo "$r" | grep "$KEY_PHRASE" > /dev/null
+echo "$r" | grep -q "$KEY_PHRASE"
 if [ $? -ne 0 ]; then
     printf "tests/doc1.txt did not pass valgrind using corpus $TEST_DIR/corpus2.txt.\n"
     ERROR_FLAG=1
