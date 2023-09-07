@@ -142,11 +142,8 @@ bool is_found(const CMap *m, const char *word)
 }
 
 /*
- * Return edit distance between two words as long as this edit distance is
- * less than curr_max_edit_dist.
- * Return an int greater than MAX_STRING_LENGTH if the edit distance is
- * greater than curr_max_edit_dist.
- * Here, a substitution is penalized by 1 (in some definitions, a substitution
+ * Return edit distance between two words.
+ * A substitution is penalized by 1 (in some definitions, a substitution
  * is penalized by 2).
  * XXX Do not calculate edit distance once we know it will exceed a
  * given value provided as a parameter.
