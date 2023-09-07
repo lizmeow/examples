@@ -142,7 +142,7 @@ bool is_found(const CMap *m, const char *word)
 }
 
 /*
- * Return edit distance between two words.
+ * Return edit distance between two words using dynamic programming.
  * A substitution is penalized by 1 (in some definitions, a substitution
  * is penalized by 2).
  * XXX Do not calculate edit distance once we know it will exceed a
