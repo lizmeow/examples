@@ -8,7 +8,7 @@ make clean
 make -f Makefile.debug
 
 r=$(valgrind ./vectortest 2>&1)
-echo "$r" | grep "$KEY_PHRASE" > /dev/null
+echo "$r" | grep -q "$KEY_PHRASE"
 if [ $? -ne 0 ]; then
     printf "vectortest did not pass valgrind.\n"
 else
@@ -16,7 +16,7 @@ else
 fi
 
 r=$(valgrind ./hashsettest 2>&1)
-echo "$r" | grep "$KEY_PHRASE" > /dev/null
+echo "$r" | grep -q "$KEY_PHRASE"
 if [ $? -ne 0 ]; then
     printf "hashsettest did not pass valgrind.\n"
 else
