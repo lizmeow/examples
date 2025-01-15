@@ -1,4 +1,4 @@
 examples
 ========
 
-Example code
+Example code. Assignments from Stanford's Computer Architecture class.  
